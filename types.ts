@@ -1,5 +1,5 @@
 
-export type Category = 'hooks' | 'bins' | 'tools' | 'specialized';
+export type Category = 'hooks' | 'bins' | 'tools' | 'specialized' | 'props';
 
 export interface ItemTemplate {
   id: string;
@@ -17,6 +17,7 @@ export interface PlacedItem {
   templateId: string;
   x: number; // grid position
   y: number; // grid position
+  rotation: number; // 0, 90, 180, 270
 }
 
 export interface BoardSize {

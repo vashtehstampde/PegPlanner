@@ -1,5 +1,4 @@
-
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import html2canvas from 'html2canvas';
 import { 
   Plus, 
@@ -12,7 +11,8 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
-  Layers
+  Layers,
+  RotateCw
 } from 'lucide-react';
 import { 
   BoardSize, 
@@ -53,14 +53,47 @@ const App: React.FC = () => {
   const activeBoardColor = BOARD_COLORS.find(c => c.id === boardColorId) || BOARD_COLORS[0];
   const activeBoardTexture = BOARD_TEXTURES.find(t => t.id === boardTextureId) || BOARD_TEXTURES[0];
 
+  const holeBackgroundUrl = useMemo(() => {
+    const svg = `
+      <svg width="${GRID_SIZE}" height="${GRID_SIZE}" viewBox="0 0 ${GRID_SIZE} ${GRID_SIZE}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${GRID_SIZE / 2}" cy="${GRID_SIZE / 2}" r="3.5" fill="${activeBoardColor.hole}" />
+      </svg>
+    `.trim();
+    return `url("data:image/svg+xml;base64,${btoa(svg)}")`;
+  }, [activeBoardColor.hole]);
+
+  const getLogicalDims = (template: ItemTemplate, rotation: number) => {
+    const isSideways = rotation === 90 || rotation === 270;
+    return {
+      width: isSideways ? template.height : template.width,
+      height: isSideways ? template.width : template.height
+    };
+  };
+
+  const rotateItem = (id: string) => {
+    setPlacedItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const nextRotation = (item.rotation + 90) % 360;
+      const template = ITEM_TEMPLATES.find(t => t.id === item.templateId)!;
+      const dims = getLogicalDims(template, nextRotation);
+      
+      let newX = item.x;
+      let newY = item.y;
+      if (newX + dims.width > boardSize.width) newX = Math.max(0, boardSize.width - dims.width);
+      if (newY + dims.height > boardSize.height) newY = Math.max(0, boardSize.height - dims.height);
+      
+      return { ...item, rotation: nextRotation, x: newX, y: newY };
+    }));
+  };
+
   useEffect(() => {
-    const saved = localStorage.getItem('pegboard_layout_v5');
+    const saved = localStorage.getItem('pegboard_layout_v10');
     if (saved) {
       try {
         const { size, items, colorId, textureId } = JSON.parse(saved);
         const board = BOARD_SIZES.find(b => b.id === size) || BOARD_SIZES[0];
         setBoardSize(board);
-        setPlacedItems(items);
+        setPlacedItems(items.map((i: any) => ({ ...i, rotation: i.rotation || 0 })));
         if (colorId) setBoardColorId(colorId);
         if (textureId) setBoardTextureId(textureId);
       } catch (e) {
@@ -70,7 +103,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('pegboard_layout_v5', JSON.stringify({
+    localStorage.setItem('pegboard_layout_v10', JSON.stringify({
       size: boardSize.id,
       items: placedItems,
       colorId: boardColorId,
@@ -86,23 +119,28 @@ const App: React.FC = () => {
       if (!item) return;
 
       const template = ITEM_TEMPLATES.find(t => t.id === item.templateId)!;
+      const dims = getLogicalDims(template, item.rotation);
       let newX = item.x;
       let newY = item.y;
 
-      switch (e.key) {
-        case 'ArrowLeft': newX -= 1; break;
-        case 'ArrowRight': newX += 1; break;
-        case 'ArrowUp': newY -= 1; break;
-        case 'ArrowDown': newY += 1; break;
-        case 'Delete':
-        case 'Backspace':
+      switch (e.key.toLowerCase()) {
+        case 'r':
+          e.preventDefault();
+          rotateItem(selectedItemId);
+          return;
+        case 'arrowleft': newX -= 1; break;
+        case 'arrowright': newX += 1; break;
+        case 'arrowup': newY -= 1; break;
+        case 'arrowdown': newY += 1; break;
+        case 'delete':
+        case 'backspace':
           setPlacedItems(prev => prev.filter(i => i.id !== selectedItemId));
           setSelectedItemId(null);
           return;
         default: return;
       }
 
-      if (newX >= 0 && newY >= 0 && newX + template.width <= boardSize.width && newY + template.height <= boardSize.height) {
+      if (newX >= 0 && newY >= 0 && newX + dims.width <= boardSize.width && newY + dims.height <= boardSize.height) {
         e.preventDefault();
         setPlacedItems(prev => prev.map(i => i.id === selectedItemId ? { ...i, x: newX, y: newY } : i));
       }
@@ -162,17 +200,24 @@ const App: React.FC = () => {
     if (!templateId) return;
 
     const template = ITEM_TEMPLATES.find(t => t.id === templateId)!;
+    
+    const defaultRotation = templateId === 'prop-katana' ? 90 : 0;
+    const currentRotation = dragState.placedItemId 
+      ? placedItems.find(i => i.id === dragState.placedItemId)!.rotation 
+      : defaultRotation;
+      
+    const dims = getLogicalDims(template, currentRotation);
 
     const isOutOfBounds = 
       gridX < 0 || 
       gridY < 0 || 
-      gridX + template.width > boardSize.width || 
-      gridY + template.height > boardSize.height;
+      gridX + dims.width > boardSize.width || 
+      gridY + dims.height > boardSize.height;
 
     if (!isOutOfBounds) {
       if (dragState.templateId) {
         const newItemId = `item-${Date.now()}`;
-        setPlacedItems(prev => [...prev, { id: newItemId, templateId: dragState.templateId!, x: gridX, y: gridY }]);
+        setPlacedItems(prev => [...prev, { id: newItemId, templateId: dragState.templateId!, x: gridX, y: gridY, rotation: defaultRotation }]);
         setSelectedItemId(newItemId);
       } else if (dragState.placedItemId) {
         setPlacedItems(prev => prev.map(item => item.id === dragState.placedItemId ? { ...item, x: gridX, y: gridY } : item));
@@ -222,16 +267,23 @@ const App: React.FC = () => {
     setSelectedItemId(null);
     
     setTimeout(async () => {
-      const canvas = await html2canvas(boardRef.current!, {
-        backgroundColor: activeBoardColor.bg,
-        scale: 2
-      });
-      const link = document.createElement('a');
-      link.download = `pegboard-layout.png`;
-      link.href = canvas.toDataURL();
-      link.click();
-      setSelectedItemId(originalSelection);
-    }, 100);
+      try {
+        const canvas = await html2canvas(boardRef.current!, {
+          backgroundColor: activeBoardColor.bg,
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+        const link = document.createElement('a');
+        link.download = `pegboard-layout.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (err) {
+        console.error("Export failed", err);
+      } finally {
+        setSelectedItemId(originalSelection);
+      }
+    }, 150);
   };
 
   const activeTemplate = dragState.templateId 
@@ -241,6 +293,8 @@ const App: React.FC = () => {
   let ghostX = 0;
   let ghostY = 0;
   let isGhostVisible = false;
+  let ghostRotation = 0;
+
   if (dragState.isDragging && boardRef.current && activeTemplate) {
     const rect = boardRef.current.getBoundingClientRect();
     const relativeX = mousePos.x - rect.left - dragState.offsetX;
@@ -249,9 +303,15 @@ const App: React.FC = () => {
     ghostX = Math.round(relativeX / GRID_SIZE) * GRID_SIZE;
     ghostY = Math.round(relativeY / GRID_SIZE) * GRID_SIZE;
 
+    ghostRotation = dragState.placedItemId 
+      ? placedItems.find(i => i.id === dragState.placedItemId)!.rotation 
+      : (activeTemplate.id === 'prop-katana' ? 90 : 0);
+      
+    const dims = getLogicalDims(activeTemplate, ghostRotation);
+
     const gridX = ghostX / GRID_SIZE;
     const gridY = ghostY / GRID_SIZE;
-    if (gridX >= 0 && gridY >= 0 && gridX + activeTemplate.width <= boardSize.width && gridY + activeTemplate.height <= boardSize.height) {
+    if (gridX >= 0 && gridY >= 0 && gridX + dims.width <= boardSize.width && gridY + dims.height <= boardSize.height) {
       isGhostVisible = true;
     }
   }
@@ -264,8 +324,11 @@ const App: React.FC = () => {
             <Layout size={24} />
           </div>
           <div className="hidden sm:block">
-            <h1 className="font-bold text-lg leading-tight tracking-tight">PegPlanner Pro</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Precision Shop Layout</p>
+            <h1 className="font-bold text-2xl leading-tight tracking-tight text-slate-900">PegPlanner</h1>
+            <div className="flex flex-col">
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Precision Shop Layout</p>
+              <p className="text-[9px] text-slate-400 font-medium italic">By VashTehStampde and Google Gemini</p>
+            </div>
           </div>
         </div>
 
@@ -342,7 +405,7 @@ const App: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-80 border-r bg-white flex flex-col z-10 shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="p-4 bg-slate-50 border-b flex flex-wrap gap-1">
-            {(['hooks', 'tools', 'bins', 'specialized'] as Category[]).map(cat => (
+            {(['hooks', 'tools', 'bins', 'specialized', 'props'] as Category[]).map(cat => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
@@ -364,8 +427,8 @@ const App: React.FC = () => {
                   className="group relative bg-white border border-slate-200 rounded-xl p-3 cursor-grab hover:border-indigo-400 hover:shadow-xl transition-all active:cursor-grabbing select-none active:scale-95"
                 >
                   <div className="h-24 flex items-center justify-center mb-2 bg-slate-100/50 rounded-lg overflow-hidden border border-slate-200/50 group-hover:bg-indigo-50/30 transition-colors">
-                    <div className="scale-75 group-hover:scale-90 transition-transform">
-                      <ItemIcon type={template.icon} color={template.category === 'hooks' ? '#94a3b8' : template.color} className="w-16 h-16 drop-shadow-sm" />
+                    <div className="scale-75 group-hover:scale-90 transition-transform w-full h-full flex items-center justify-center">
+                      <ItemIcon type={template.icon} color={template.category === 'hooks' ? '#94a3b8' : template.color} width={template.width} height={template.height} className="max-w-[80%] max-h-[80%] drop-shadow-sm" />
                     </div>
                   </div>
                   <div className="text-center">
@@ -387,7 +450,7 @@ const App: React.FC = () => {
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-1">Workshop Tips</h4>
                 <p className="text-[11px] leading-relaxed text-indigo-100/70 font-medium">
-                  Mix and match colors and textures to find your perfect shop aesthetic. Press <strong className="text-white">DEL</strong> to remove selected items.
+                  Press <strong className="text-white">R</strong> to rotate. Press <strong className="text-white">DEL</strong> to remove. Use <strong className="text-white">Arrows</strong> for precision positioning.
                 </p>
               </div>
             </div>
@@ -407,7 +470,7 @@ const App: React.FC = () => {
             {/* Board Texture Layer */}
             {activeBoardTexture.id !== 'plain' && (
               <div 
-                className="absolute inset-0 pointer-events-none"
+                className="absolute inset-0 pointer-events-none z-0"
                 style={{
                   backgroundImage: activeBoardTexture.css,
                   mixBlendMode: activeBoardTexture.blendMode as any,
@@ -419,41 +482,63 @@ const App: React.FC = () => {
 
             {/* Pegboard Holes */}
             <div 
-              className="absolute inset-0 pointer-events-none"
+              className="absolute inset-0 pointer-events-none z-1"
               style={{
                 backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
-                backgroundImage: `radial-gradient(circle at ${GRID_SIZE / 2}px ${GRID_SIZE / 2}px, ${activeBoardColor.hole} 3.5px, transparent 0px)`,
+                backgroundImage: holeBackgroundUrl,
               }}
             />
 
+            {/* Ghost Preview Shadow */}
             {isGhostVisible && activeTemplate && (
               <div 
                 className="absolute pointer-events-none z-10 transition-all duration-75"
                 style={{
                   left: ghostX,
                   top: ghostY,
-                  width: activeTemplate.width * GRID_SIZE,
-                  height: activeTemplate.height * GRID_SIZE,
+                  width: getLogicalDims(activeTemplate, ghostRotation).width * GRID_SIZE,
+                  height: getLogicalDims(activeTemplate, ghostRotation).height * GRID_SIZE,
                 }}
               >
-                <div className="w-full h-full border-2 border-dashed border-indigo-500 rounded bg-indigo-500/10 flex items-center justify-center opacity-40">
-                  <ItemIcon type={activeTemplate.icon} color="white" className="w-4/5 h-4/5 translate-y-[-2px]" />
+                <div className="w-full h-full border-2 border-dashed border-indigo-500 rounded bg-indigo-500/10 flex items-center justify-center opacity-40 overflow-hidden">
+                  <div 
+                    className="flex items-center justify-center pointer-events-none absolute"
+                    style={{ 
+                      transform: `rotate(${ghostRotation}deg)`,
+                      width: activeTemplate.width * GRID_SIZE,
+                      height: activeTemplate.height * GRID_SIZE,
+                    }}
+                  >
+                    <ItemIcon type={activeTemplate.icon} color="white" width={activeTemplate.width} height={activeTemplate.height} className="w-full h-full" />
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* Dragging Item */}
             {dragState.isDragging && activeTemplate && (
               <div 
-                className="fixed pointer-events-none z-50 opacity-50 grayscale contrast-125"
+                className="fixed pointer-events-none z-50 opacity-60 grayscale contrast-125"
                 style={{
                   left: mousePos.x,
                   top: mousePos.y,
-                  width: activeTemplate.width * GRID_SIZE,
-                  height: activeTemplate.height * GRID_SIZE,
+                  width: getLogicalDims(activeTemplate, ghostRotation).width * GRID_SIZE,
+                  height: getLogicalDims(activeTemplate, ghostRotation).height * GRID_SIZE,
                   transform: `translate(-${dragState.offsetX}px, -${dragState.offsetY}px)`,
                 }}
               >
-                 <ItemIcon type={activeTemplate.icon} color={activeTemplate.color} className="w-full h-full drop-shadow-2xl translate-y-[-2px]" />
+                 <div className="w-full h-full relative flex items-center justify-center">
+                    <div 
+                      className="flex items-center justify-center pointer-events-none absolute"
+                      style={{ 
+                        transform: `rotate(${ghostRotation}deg)`,
+                        width: activeTemplate.width * GRID_SIZE,
+                        height: activeTemplate.height * GRID_SIZE,
+                      }}
+                    >
+                      <ItemIcon type={activeTemplate.icon} color={activeTemplate.color} width={activeTemplate.width} height={activeTemplate.height} className="w-full h-full" />
+                    </div>
+                 </div>
               </div>
             )}
 
@@ -461,51 +546,74 @@ const App: React.FC = () => {
               const template = ITEM_TEMPLATES.find(t => t.id === item.templateId)!;
               const isBeingDragged = dragState.placedItemId === item.id;
               const isSelected = selectedItemId === item.id;
+              const dims = getLogicalDims(template, item.rotation);
               
               return (
                 <div
                   key={item.id}
                   onMouseDown={(e) => handleDragStartExisting(item.id, e)}
                   onClick={(e) => { e.stopPropagation(); setSelectedItemId(item.id); }}
-                  className={`absolute group cursor-grab active:cursor-grabbing transition-opacity ${
+                  className={`absolute group cursor-grab active:cursor-grabbing transition-opacity z-10 ${
                     isBeingDragged ? 'opacity-0' : 'opacity-100 hover:z-20'
                   }`}
                   style={{
                     left: item.x * GRID_SIZE,
                     top: item.y * GRID_SIZE,
-                    width: template.width * GRID_SIZE,
-                    height: template.height * GRID_SIZE,
+                    width: dims.width * GRID_SIZE,
+                    height: dims.height * GRID_SIZE,
                   }}
                 >
-                  <div className={`w-full h-full relative transition-transform origin-top ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-4 ring-offset-transparent rounded-lg scale-[1.01]' : 'group-hover:scale-[1.005]'}`}>
+                  <div className={`w-full h-full relative transition-transform origin-center ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-4 ring-offset-transparent rounded-lg scale-[1.01]' : 'group-hover:scale-[1.005]'}`}>
                     
-                    {template.pegs?.map((pegCol, idx) => (
+                    {/* Visual Alignment Aids (Pegs) - Only drawn for rotation 0 for clarity */}
+                    {item.rotation === 0 && template.pegs?.map((pegCol, idx) => (
                       <div 
                         key={idx}
-                        className="absolute w-3 h-3 bg-slate-500 rounded-full border border-slate-700 shadow-inner z-20"
+                        className="absolute w-2 h-2 bg-slate-900/50 rounded-full z-20 pointer-events-none opacity-40 shadow-sm"
                         style={{ 
-                          left: (pegCol + 0.5) * GRID_SIZE - 6,
-                          top: 0.5 * GRID_SIZE - 6
+                          left: (pegCol + 0.5) * GRID_SIZE - 4,
+                          top: 0.5 * GRID_SIZE - 4
                         }}
                       />
                     ))}
-                    
-                    <div className="w-full h-full">
-                      <ItemIcon 
-                        type={template.icon} 
-                        color={template.category === 'hooks' ? '#cbd5e1' : template.color} 
-                        className={`w-full h-full drop-shadow-[0_8px_16px_rgba(0,0,0,0.35)] ${template.category === 'hooks' ? 'opacity-90' : 'opacity-100'} translate-y-[-2px]`} 
-                      />
+
+                    <div className="absolute inset-0 flex items-center justify-center overflow-visible pointer-events-none">
+                      <div
+                        style={{ 
+                          transform: `rotate(${item.rotation}deg)`,
+                          width: template.width * GRID_SIZE,
+                          height: template.height * GRID_SIZE,
+                          flexShrink: 0
+                        }}
+                        className="flex items-center justify-center"
+                      >
+                        <ItemIcon 
+                          type={template.icon} 
+                          color={template.category === 'hooks' ? '#cbd5e1' : template.color} 
+                          width={template.width}
+                          height={template.height}
+                          className="w-full h-full drop-shadow-[0_12px_24px_rgba(0,0,0,0.4)]" 
+                        />
+                      </div>
                     </div>
 
                     {!dragState.isDragging && isSelected && (
-                      <div className="absolute -top-4 -right-4 flex items-start justify-end z-30">
+                      <div className="absolute -top-4 -right-4 flex flex-col items-center gap-2 z-30">
                         <button
                           onMouseDown={(e) => e.stopPropagation()}
                           onClick={() => removeItem(item.id)}
                           className="w-8 h-8 bg-rose-500 rounded-full shadow-lg text-white flex items-center justify-center hover:bg-rose-600 transition-all transform hover:scale-110 active:scale-90 border-2 border-white"
+                          title="Delete (Del)"
                         >
                           <Trash2 size={16} strokeWidth={3} />
+                        </button>
+                        <button
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); rotateItem(item.id); }}
+                          className="w-8 h-8 bg-indigo-500 rounded-full shadow-lg text-white flex items-center justify-center hover:bg-indigo-600 transition-all transform hover:scale-110 active:scale-90 border-2 border-white"
+                          title="Rotate (R)"
+                        >
+                          <RotateCw size={16} strokeWidth={3} />
                         </button>
                       </div>
                     )}

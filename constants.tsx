@@ -100,4 +100,13 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { id: 'tool-tape', name: 'Tape Measure', category: 'tools', width: 3, height: 3, color: '#facc15', icon: 'tape-measure', pegs: [1] },
   { id: 'tool-utility', name: 'Utility Knife', category: 'tools', width: 1, height: 5, color: '#ef4444', icon: 'utility-knife', pegs: [0] },
   { id: 'tool-square', name: 'Framing Square', category: 'tools', width: 12, height: 8, color: '#94a3b8', icon: 'square', pegs: [0, 11] },
+
+  // Props
+  { id: 'prop-pistol', name: 'Handgun Prop', category: 'props', width: 6, height: 4, color: '#334155', icon: 'prop-pistol', pegs: [2, 5] },
+  { id: 'prop-rifle', name: 'Assault Rifle', category: 'props', width: 18, height: 6, color: '#1e293b', icon: 'prop-rifle', pegs: [4, 14] },
+  { id: 'prop-shotgun', name: 'Tactical Shotgun', category: 'props', width: 20, height: 4, color: '#1e293b', icon: 'prop-shotgun', pegs: [4, 16] },
+  { id: 'prop-dagger', name: 'Combat Dagger', category: 'props', width: 2, height: 8, color: '#475569', icon: 'prop-dagger', pegs: [0, 1] },
+  { id: 'prop-bowie', name: 'Bowie Knife', category: 'props', width: 3, height: 10, color: '#475569', icon: 'prop-bowie', pegs: [1] },
+  { id: 'prop-katana', name: 'Katana Prop', category: 'props', width: 2, height: 24, color: '#1e293b', icon: 'prop-katana', pegs: [0] },
+  { id: 'prop-needler', name: 'Type-33 Needler', category: 'props', width: 12, height: 10, color: '#5b21b6', icon: 'prop-needler', pegs: [2, 9] },
 ];
